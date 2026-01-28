@@ -118,3 +118,21 @@ com.examples.springbootmonolithicstarter
 | Domain Service | Domain rule verb | calculateTotalPrice, reserveStock |
 | Entity | Business action verb | cancel, confirm, ship |
 | Repository | find, save, delete | findByCustomerId, save |
+
+## Testing Strategy
+
+See [README.md](README.md#testing-guide) for detailed testing guide.
+
+| Layer | Test Type | Annotation | Speed |
+|-------|-----------|------------|-------|
+| Model (Entity, VO) | Unit Test | None | Fast |
+| Domain Service | Unit Test | None | Fast |
+| Application Service | Unit Test | `@ExtendWith(MockitoExtension.class)` | Fast |
+| Repository | Slice Test | `@DataJpaTest` | Medium |
+| Controller | Slice Test | `@WebMvcTest` | Medium |
+
+### Test Patterns
+- **BDD Style**: given-when-then structure
+- **@Nested**: Group related tests
+- **@DisplayName**: Korean test names for readability
+- **Factory Methods**: Reusable test data creation
