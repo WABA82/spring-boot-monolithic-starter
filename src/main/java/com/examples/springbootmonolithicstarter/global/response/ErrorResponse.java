@@ -1,5 +1,6 @@
 package com.examples.springbootmonolithicstarter.global.response;
 
+import com.examples.springbootmonolithicstarter.global.exception.ErrorCode;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,8 +27,8 @@ public class ErrorResponse {
         this.errors = new ArrayList<>();
     }
 
-    public static ErrorResponse of(int status, String code, String message) {
-        return new ErrorResponse(status, code, message);
+    public static ErrorResponse of(ErrorCode errorCode) {
+        return new ErrorResponse(errorCode.getStatus().value(), errorCode.getCode(), errorCode.getMessage());
     }
 
     public void addFieldError(String field, String message) {

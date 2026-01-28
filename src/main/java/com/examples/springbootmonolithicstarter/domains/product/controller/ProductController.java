@@ -26,7 +26,7 @@ public class ProductController {
     ) {
         ProductResponse response = productApplicationService.createProduct(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(response));
+                .body(ApiResponse.ok(response));
     }
 
     @GetMapping("/{productId}")
@@ -34,19 +34,19 @@ public class ProductController {
             @PathVariable Long productId
     ) {
         ProductResponse response = productApplicationService.getProduct(productId);
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts() {
         List<ProductResponse> response = productApplicationService.getAllProducts();
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @GetMapping("/available")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getAvailableProducts() {
         List<ProductResponse> response = productApplicationService.getAvailableProducts();
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @GetMapping("/search")
@@ -54,7 +54,7 @@ public class ProductController {
             @RequestParam String name
     ) {
         List<ProductResponse> response = productApplicationService.searchProducts(name);
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @PutMapping("/{productId}")
@@ -63,7 +63,7 @@ public class ProductController {
             @Valid @RequestBody UpdateProductRequest request
     ) {
         ProductResponse response = productApplicationService.updateProduct(productId, request);
-        return ResponseEntity.ok(ApiResponse.success(response));
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @PostMapping("/{productId}/stock/add")
@@ -72,7 +72,7 @@ public class ProductController {
             @RequestParam int quantity
     ) {
         productApplicationService.addStock(productId, quantity);
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
     @PostMapping("/{productId}/stock/remove")
@@ -81,7 +81,7 @@ public class ProductController {
             @RequestParam int quantity
     ) {
         productApplicationService.removeStock(productId, quantity);
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
     @PostMapping("/{productId}/discontinue")
@@ -89,7 +89,7 @@ public class ProductController {
             @PathVariable Long productId
     ) {
         productApplicationService.discontinueProduct(productId);
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.ok(null));
     }
 
     @PostMapping("/{productId}/activate")
@@ -97,6 +97,6 @@ public class ProductController {
             @PathVariable Long productId
     ) {
         productApplicationService.activateProduct(productId);
-        return ResponseEntity.ok(ApiResponse.success(null));
+        return ResponseEntity.ok(ApiResponse.ok(null));
     }
 }
