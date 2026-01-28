@@ -20,12 +20,14 @@ spring:
     show-sql: true
     properties:
       hibernate:
-        show_sql: true          # SQL ?? ??
-        format_sql: true        # SQL ??? ?? ???
-        use_sql_comments: true  # ?? ??? ??(?? ????? ????? ?) ??
+        show_sql: true          # SQL 출력 여부
+        format_sql: true        # SQL 가독성 좋게 포맷팅
+        use_sql_comments: true  # 쿼리 상단에 주석(어떤 메서드에서 실행됐는지 등) 추가
 
 logging:
   level:
-    org.hibernate.SQL: DEBUG
-    org.hibernate.orm.jdbc.bind: TRACE
+
     org.springframework: INFO
+
+    org.hibernate.SQL: debug              # 실행 쿼리 출력
+    org.hibernate.orm.jdbc.bind: trace    # 파라미터 바인딩 값 출력 (Hibernate 6 이상)
