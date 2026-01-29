@@ -1,982 +1,168 @@
 # spring-boot-monolithic-starter
 
-<aside>
+> **스프링부트 모놀리식 스타터**: 도메인 중심으로 설계된 Spring Boot 모놀리식 애플리케이션 예제
 
-**스프링부트 모놀리식 스타터**: DDD 기반 스프링부트 **모놀리식 애플리케이션**을 일관성 있게 설계하기 위한 구조 및 규칙 가이드입니다.
+## **빌드 및 실행 명령어**
 
-</aside>
+```bash
+# 빌드
+./gradlew build
 
----
+# 애플리케이션 실행 (Docker Compose를 통해 MySQL 자동 실행)
+./gradlew bootRun
 
-## 📂 Package Structure
+# 전체 테스트 실행
+./gradlewtest
 
-> 도메인 중심 구조 + 계층 책임 분리
->
+# 단일 테스트 클래스 실행
+./gradlewtest --tests"com.examples.springbootmonolithicstarter.SomeTestClass"
+
+# 단일 테스트 메서드 실행
+./gradlewtest --tests"com.examples.springbootmonolithicstarter.SomeTestClass.testMethodName"
+
+# 클린 빌드
+./gradlew clean build
+```
+
+## **기술 스택**
+
+- Java 21
+- Spring Boot 3.5.x (Web, JPA, Validation, Actuator 포함)
+- MySQL
+
+  (로컬 개발 환경에서는 spring-boot-docker-compose를 사용한 Docker Compose 기반)
+
+- Lombok
+- SpringDoc OpenAPI (Swagger UI)
+
+## **아키텍처 개요**
+
+이 프로젝트는 **DDD(Domain-Driven Design)** 기반의 모놀리식 Spring Boot 애플리케이션으로, 도메인 중심 패키지 구조와 계층별 책임 분리를 따릅니다.
+
+자세한 가이드는 [ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
+
+### **패키지 구조**
 
 ```
-com.example.app
+com.examples.springbootmonolithicstarter
+├──global/                        # 공통(횡단) 관심사
+│   ├── config/                   # 전역 설정 (JPA, Security, Web, Kafka)
+│   ├── response/                 # API 응답 표준 (ApiResponse, ErrorResponse)
+│   ├── exception/                # 전역 예외 처리 (GlobalExceptionHandler, ErrorCode)
+│   └── util/                     # 유틸리티
 │
-├── global/                         # 전역 공통 요소
-│   ├── config/                     # 전역 설정 (JPA, Security, Web, Kafka 등)
-│   ├── response/                   # API 응답 표준 (ApiResponse, ErrorResponse)
-│   ├── exception/                  # 전역 예외 처리 (GlobalExceptionHandler, ErrorCode)
-│   └── util/                       # 유틸리티 클래스
-│
-└── domains/                        # 도메인별 모듈
-    ├── common/                     # 도메인 공통 인프라
-    │   ├── outbox/                 # Transaction Outbox 패턴 (선택)
-    │   └── saga/                   # Saga 공통 인프라 (선택)
-    │
-    └── {domain-name}/              # 예: order, product, customer
-        ├── controller/             # REST API 컨트롤러
+└── domains/                      # 도메인 모듈
+    ├── common/                   # 공통 도메인 인프라 (outbox, saga)
+    └── {domain-name}/            # 예: order, product, customer
+        ├── controller/           # REST 컨트롤러
         ├── service/
-        │   ├── application/        # Application Service (유즈케이스 조율)
-        │   └── domain/             # Domain Service (도메인 규칙)
-        ├── repository/             # Repository 인터페이스
-        ├── model/                  # Entity, Value Object, Enum
+        │   ├── application/      # 애플리케이션 서비스 (유스케이스 오케스트레이션)
+        │   └── domain/           # 도메인 서비스 (비즈니스 규칙)
+        ├── repository/           # JPA 레포지토리
+        ├── model/                # 엔티티, 값 객체, Enum
         ├── dto/
-        │   ├── request/            # 요청 DTO
-        │   └── response/           # 응답 DTO
-        ├── exception/              # 도메인 예외
-        ├── event/                  # 도메인 이벤트 (선택)
-        ├── saga/                   # Saga 구현 (선택)
-        └── kafka/                  # Kafka Producer/Consumer (선택)
-
+        │   ├── request/          # 요청 DTO
+        │   └── response/         # 응답 DTO
+        ├── exception/            # 도메인 예외
+        ├──event/                 # 도메인 이벤트 (선택)
+        ├── saga/                 # Saga 구현 (선택)
+        └── kafka/                # Kafka 프로듀서/컨슈머 (선택)
 ```
 
----
+### **계층 규칙 (Layer Rules)**
 
-## 🧱 Layer Responsibilities
+| **계층** | **참조 가능** | **참조 불가** |
+| --- | --- | --- |
+| Controller | Application Service만 | Domain Service, Repository, Model |
+| Application Service | 자신의/다른 도메인의 Repository, Domain Service | 다른 도메인의 Application Service |
+| Domain Service | 자신의 도메인 Repository, Model | 다른 도메인의 Domain Service |
+| Model | Value Object, Enum | Repository, Service |
 
-### Controller
+### **핵심 설계 원칙**
+
+**Controller**
 
 - HTTP 요청/응답 처리
 - 요청 검증(@Valid)
-- **Application Service만 호출**
-- 비즈니스 로직 ❌
+- Application Service만 호출
+- 비즈니스 로직 금지
 
-```java
-@RestController
-@RequestMapping("/api/products")
-@RequiredArgsConstructor
-public class ProductController {
+**Application Service**
 
-    private final ProductApplicationService productApplicationService;
+- 유스케이스 흐름 관리
+- 트랜잭션 경계 설정
+- Repository 및 Domain Service 오케스트레이션
 
-    @PostMapping
-    public ResponseEntity<ApiResponse<ProductResponse>> createProduct(
-            @Valid @RequestBody CreateProductRequest request
-    ) {
-        ProductResponse response = productApplicationService.createProduct(request);
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(response));
-    }
+**Domain Service**
 
-    @GetMapping("/{productId}")
-    public ResponseEntity<ApiResponse<ProductResponse>> getProduct(
-            @PathVariable Long productId
-    ) {
-        ProductResponse response = productApplicationService.getProduct(productId);
-        return ResponseEntity.ok(ApiResponse.success(response));
-    }
-}
-```
+- 단일 Entity에 속하지 않는 비즈니스 규칙
+- Stateless
+- 자신의 도메인만 처리
+- 트랜잭션 관리 없음
 
-### Application Service
+**Entity**
 
-- 유즈케이스 흐름 관리
-- 트랜잭션 경계 관리
-- 여러 Repository / Domain Service 조합
-- **다른 도메인의 Application Service 호출 ❌**
+- `@NoArgsConstructor(access = AccessLevel.PROTECTED)`를 사용하는 `protected` 기본 생성자
+- 객체 생성을 위한 static factory method 사용
+- Getter만 제공, Setter 금지
+- 상태 변경은 비즈니스 메서드로 표현
 
-```java
-@Service
-@RequiredArgsConstructor
-@Transactional(readOnly = true)
-public class ProductApplicationService {
+  (예: `cancel()`, `confirm()`, `ship()`)
 
-    private final ProductRepository productRepository;
-    private final StockService stockService;
 
-    @Transactional
-    public ProductResponse createProduct(CreateProductRequest request) {
-        Product product = Product.create(
-                request.name(),
-                request.description(),
-                request.price(),
-                request.stockQuantity()
-        );
-        Product savedProduct = productRepository.save(product);
-        return ProductResponse.from(savedProduct);
-    }
+**Value Object**
 
-    public ProductResponse getProduct(Long productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ProductNotFoundException(productId));
-        return ProductResponse.from(product);
-    }
+- static factory method 사용, 생성 시 유효성 검증
+- 불변 객체(final 필드), `equals/hashCode` 오버라이드
+- `@Embeddable` 사용
 
-    @Transactional
-    public void removeStock(Long productId, int quantity) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ProductNotFoundException(productId));
-        stockService.reserveStock(product, quantity);
-    }
-}
-```
+**DTO**
 
-### Domain Service
-
-- 하나의 Entity에 넣기 애매한 비즈니스 규칙을 담당
-- Stateless (상태와 관련된 값을 맴버 변수로 가질 수 없음) ❌
-- **자기 도메인만 사용**
-- 트랜잭션 관리 ❌
-
-```java
-@Service
-public class StockService {
-
-    public void reserveStock(Product product, int quantity) {
-        if (!product.isAvailable()) {
-            throw new ProductOutOfStockException(product.getId(), quantity, 0);
-        }
-        if (product.getStockQuantity() < quantity) {
-            throw new ProductOutOfStockException(
-                    product.getId(),
-                    quantity,
-                    product.getStockQuantity()
-            );
-        }
-        product.removeStock(quantity);
-    }
-
-    public void releaseStock(Product product, int quantity) {
-        product.addStock(quantity);
-    }
-
-    public boolean hasEnoughStock(Product product, int quantity) {
-        return product.isAvailable() && product.getStockQuantity() >= quantity;
-    }
-}
-```
-
-### Model (Entity / Value Object)
-
-- 핵심 비즈니스 규칙 보유
-- Entity
-    - 기본 생성자는 `protected`
-    - 객체 생성은 정적 팩토리 메서드 사용
-    - Getter만 제공, Setter 금지
-    - 비즈니스 의미를 가진 메서드로 상태 변경
-    - `@NoArgsConstructor(access = AccessLevel.PROTECTED)`
-- Value Object
-    - 정적 팩토리 메서드로 생성
-    - 생성 시 검증 수행
-    - 불변 객체 (final 필드)
-    - `equals/hashCode` 오버라이드
-    - `@Embeddable` 어노테이션 사용
-
-**Entity 예시**
-
-```java
-@Entity
-@Table(name = "products")
-@Getter
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Product {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false)
-    private String name;
-
-    @Embedded
-    @AttributeOverride(name = "amount", column = @Column(name = "price", nullable = false))
-    private Money price;
-
-    @Column(nullable = false)
-    private Integer stockQuantity;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ProductStatus status;
-
-    // 정적 팩토리 메서드
-    public static Product create(String name, String description, BigDecimal price, Integer stockQuantity) {
-        Product product = new Product();
-        product.name = name;
-        product.price = Money.of(price);
-        product.stockQuantity = stockQuantity;
-        product.status = ProductStatus.AVAILABLE;
-        return product;
-    }
-
-    // 비즈니스 메서드
-    public void addStock(int quantity) {
-        if (quantity <= 0) {
-            throw new IllegalArgumentException("추가할 재고 수량은 0보다 커야 합니다.");
-        }
-        this.stockQuantity += quantity;
-    }
-
-    public void removeStock(int quantity) {
-        int restStock = this.stockQuantity - quantity;
-        if (restStock < 0) {
-            throw new IllegalStateException("재고가 부족합니다. 현재 재고: " + this.stockQuantity);
-        }
-        this.stockQuantity = restStock;
-    }
-
-    public void discontinue() {
-        this.status = ProductStatus.DISCONTINUED;
-    }
-
-    public boolean isAvailable() {
-        return this.status == ProductStatus.AVAILABLE && this.stockQuantity > 0;
-    }
-}
-```
-
-**Value Object 예시**
-
-```java
-@Embeddable
-@Getter
-@EqualsAndHashCode
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Money {
-
-    private BigDecimal amount;
-
-    private Money(BigDecimal amount) {
-        this.amount = amount;
-    }
-
-    // 정적 팩토리 메서드 + 검증
-    public static Money of(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("금액은 0 이상이어야 합니다.");
-        }
-        return new Money(amount);
-    }
-
-    public static Money zero() {
-        return new Money(BigDecimal.ZERO);
-    }
-
-    // 불변 연산
-    public Money add(Money other) {
-        return new Money(this.amount.add(other.amount));
-    }
-
-    public Money multiply(int quantity) {
-        return new Money(this.amount.multiply(BigDecimal.valueOf(quantity)));
-    }
-}
-```
-
-### Repository
-
-- JPA 기반 데이터 접근 인터페이스
-
-```java
-public interface ProductRepository extends JpaRepository<Product, Long> {
-
-    List<Product> findByStatus(ProductStatus status);
-
-    List<Product> findByNameContaining(String name);
-}
-```
-
-### DTO
-
-- API 전송 전용 객체
 - Request / Response 분리
 - Response는 `from()` 팩토리 메서드 사용
 
-**Request DTO 예시**
+### **네이밍 컨벤션**
 
-```java
-public record CreateProductRequest(
-        @NotBlank(message = "상품명은 필수입니다.")
-        String name,
+### **클래스 이름**
 
-        String description,
-
-        @NotNull(message = "가격은 필수입니다.")
-        @Min(value = 0, message = "가격은 0 이상이어야 합니다.")
-        BigDecimal price,
-
-        @NotNull(message = "재고 수량은 필수입니다.")
-        @Min(value = 0, message = "재고 수량은 0 이상이어야 합니다.")
-        Integer stockQuantity
-) {
-}
-```
-
-**Response DTO 예시**
-
-```java
-public record ProductResponse(
-        Long id,
-        String name,
-        String description,
-        BigDecimal price,
-        Integer stockQuantity,
-        ProductStatus status,
-        boolean available
-) {
-    // from() 팩토리 메서드
-    public static ProductResponse from(Product product) {
-        return new ProductResponse(
-                product.getId(),
-                product.getName(),
-                product.getDescription(),
-                product.getPrice().getAmount(),
-                product.getStockQuantity(),
-                product.getStatus(),
-                product.isAvailable()
-        );
-    }
-}
-```
-
-### Exception
-
-- 도메인별 비즈니스 예외 정의
-
-**ErrorCode 예시**
-
-```java
-@Getter
-@RequiredArgsConstructor
-public enum ErrorCode {
-
-    // Common
-    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST, "C001", "잘못된 입력값입니다."),
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "C002", "서버 오류가 발생했습니다."),
-
-    // Product
-    PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "P001", "상품을 찾을 수 없습니다."),
-    PRODUCT_OUT_OF_STOCK(HttpStatus.BAD_REQUEST, "P002", "상품 재고가 부족합니다.");
-
-    private final HttpStatus status;
-    private final String code;
-    private final String message;
-}
-```
-
-**도메인 예외 예시**
-
-```java
-public class ProductNotFoundException extends BusinessException {
-
-    public ProductNotFoundException() {
-        super(ErrorCode.PRODUCT_NOT_FOUND);
-    }
-
-    public ProductNotFoundException(Long productId) {
-        super(ErrorCode.PRODUCT_NOT_FOUND, "상품을 찾을 수 없습니다. ID: " + productId);
-    }
-}
-```
-
-**GlobalExceptionHandler 예시**
-
-```java
-@Slf4j
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    @ExceptionHandler(BusinessException.class)
-    protected ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
-        log.error("BusinessException: {}", e.getMessage());
-        ErrorCode errorCode = e.getErrorCode();
-        ErrorResponse response = ErrorResponse.of(
-                errorCode.getStatus().value(),
-                errorCode.getCode(),
-                e.getMessage()
-        );
-        return ResponseEntity.status(errorCode.getStatus()).body(response);
-    }
-
-    @ExceptionHandler(BindException.class)
-    protected ResponseEntity<ErrorResponse> handleBindException(BindException e) {
-        log.error("BindException: {}", e.getMessage());
-        ErrorCode errorCode = ErrorCode.INVALID_INPUT_VALUE;
-        ErrorResponse response = ErrorResponse.of(
-                errorCode.getStatus().value(),
-                errorCode.getCode(),
-                errorCode.getMessage()
-        );
-        e.getBindingResult().getFieldErrors()
-                .forEach(error -> response.addFieldError(error.getField(), error.getDefaultMessage()));
-        return ResponseEntity.status(errorCode.getStatus()).body(response);
-    }
-}
-```
-
----
-
-## 🔗 의존성 규칙
-
-| 계층 | 참조 가능 | 참조 금지 |
-| --- | --- | --- |
-| **Controller** | Application Service | Domain Service, Repository, Model |
-| **Application Service** | 자기/다른 도메인의 Repository, Domain Service | 다른 도메인의 Application Service |
-| **Domain Service** | 자기 도메인의 Repository, Model | 다른 도메인의 Domain Service |
-| **Model** | Value Object, Enum | Repository, Service |
-- Controller → Application Service
-- Application Service → Repository / Domain Service
-- Domain Service → Model
-- Model → 다른 계층 의존 ❌
-
----
-
-## 🏷 Naming Convention
-
-### 클래스명
-
-| 구분 | 규칙 | 예시 |
+| **유형** | **패턴** | **예시** |
 | --- | --- | --- |
 | Controller | `{Domain}Controller` | OrderController |
 | Application Service | `{Domain}ApplicationService` | OrderApplicationService |
-| Domain Service | `{비즈니스개념}Service` | OrderPricingService, StockService |
+| Domain Service | `{Concept}Service` | OrderPricingService, StockService |
 | Entity | 명사 | Order, Product |
 | Value Object | 명사 | Money, Address |
 | Repository | `{Entity}Repository` | OrderRepository |
-| Request DTO | `{동사}{Domain}Request` | CreateOrderRequest |
+| Request DTO | `{Verb}{Domain}Request` | CreateOrderRequest |
 | Response DTO | `{Domain}Response` | OrderResponse |
-| Exception | `{Domain}{이유}Exception` | OrderNotFoundException |
+| Exception | `{Domain}{Reason}Exception` | OrderNotFoundException |
 
-### 메서드명
+### **메서드 이름**
 
-| 구분 | 규칙 | 예시 |
+| **유형** | **패턴** | **예시** |
 | --- | --- | --- |
-| Application Service | 유즈케이스 동사 | createOrder, cancelOrder |
+| Application Service | 유스케이스 동사 | createOrder, cancelOrder |
 | Domain Service | 도메인 규칙 동사 | calculateTotalPrice, reserveStock |
-| Entity | 비즈니스 동작 동사 | cancel, confirm, ship |
+| Entity | 비즈니스 행위 동사 | cancel, confirm, ship |
 | Repository | find, save, delete | findByCustomerId, save |
 
----
-# **Testing Guide**
+## **테스팅 전략**
 
-> DDD 기반 스프링부트 애플리케이션을 위한 테스트 전략 가이드입니다.
->
+자세한 테스트 가이드는 [TESTING.md](docs/TESTING.md)를 참고하세요.
 
----
+| **계층** | **테스트 유형** | **어노테이션** | **속도** |
+| --- | --- | --- | --- |
+| Model (Entity, VO) | 단위 테스트 | 없음 | 빠름 |
+| Domain Service | 단위 테스트 | 없음 | 빠름 |
+| Application Service | 단위 테스트 | `@ExtendWith(MockitoExtension.class)` | 빠름 |
+| Repository | 슬라이스 테스트 | `@DataJpaTest` | 중간 |
+| Controller | 슬라이스 테스트 | `@WebMvcTest` | 중간 |
 
-## **테스트 피라미드**
+### **테스트 패턴**
 
-```
-        /\
-       /  \        E2E 테스트 (선택)
-      /----\
-     /      \      통합 테스트 (Controller, Repository)
-    /--------\
-   /          \    단위 테스트 (Model, Service)
-  --------------
-
-```
-
-- **단위 테스트**: 가장 많이 작성, 빠른 피드백
-- **통합 테스트**: 컴포넌트 간 상호작용 검증
-- **E2E 테스트**: 전체 흐름 검증 (선택적)
+- **BDD 스타일**: given-when-then 구조
+- **@Nested**: 관련 테스트 그룹화
+- **@DisplayName**: 가독성을 위한 한글 테스트 이름
+- **팩토리 메서드**: 재사용 가능한 테스트 데이터 생성
 
 ---
-
-## **레이어별 테스트 전략**
-
-| **레이어** | **테스트 종류** | **어노테이션** | **DB** | **Spring Context** |
-| --- | --- | --- | --- | --- |
-| Model (Entity, VO) | 단위 테스트 | 없음 | X | X |
-| Domain Service | 단위 테스트 | 없음 | X | X |
-| Application Service | 단위 테스트 | `@ExtendWith(MockitoExtension.class)` | X | X |
-| Repository | 슬라이스 테스트 | `@DataJpaTest` | H2 | 부분 |
-| Controller | 슬라이스 테스트 | `@WebMvcTest` | X | 부분 |
-
----
-
-## **1. Model 테스트 (Entity, Value Object) (✅ 반드시 테스트)**
-
-### **테스트 포인트**
-
-- 생성 규칙 (유효성 검증)
-- 상태 변경 메서드
-- 비즈니스 규칙 위반 시 예외
-- 동등성 비교 (Value Object)
-
-### **특징**
-
-- 순수 Java 단위 테스트
-- Spring Context 불필요 → **가장 빠름**
-- 비즈니스 규칙 검증에 집중
-
-### **Value Object 테스트 예시**
-
-```java
-@DisplayName("Money 값 객체")
-class MoneyTest {
-
-    @Nested
-    @DisplayName("생성")
-    class Creation {
-
-        @Test
-        @DisplayName("양수 금액으로 생성할 수 있다")
-        void createWithPositiveAmount() {
-            Money money = Money.of(BigDecimal.valueOf(1000));
-
-            assertThat(money.getAmount()).isEqualByComparingTo(BigDecimal.valueOf(1000));
-        }
-
-        @Test
-        @DisplayName("음수 금액으로 생성하면 예외가 발생한다")
-        void createWithNegativeAmountThrowsException() {
-            assertThatThrownBy(() -> Money.of(BigDecimal.valueOf(-1000)))
-                    .isInstanceOf(IllegalArgumentException.class);
-        }
-    }
-}
-```
-
-### **Entity 테스트 예시**
-
-```java
-@DisplayName("Product 엔티티")
-class ProductTest {
-
-    @Nested
-    @DisplayName("재고 관리")
-    class StockManagement {
-
-        @Test
-        @DisplayName("재고를 추가할 수 있다")
-        void addStock() {
-            Product product = createProduct(100);
-
-            product.addStock(50);
-
-            assertThat(product.getStockQuantity()).isEqualTo(150);
-        }
-
-        @Test
-        @DisplayName("재고보다 많은 수량을 차감하면 예외가 발생한다")
-        void removeStockExceedingQuantityThrowsException() {
-            Product product = createProduct(100);
-
-            assertThatThrownBy(() -> product.removeStock(150))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("재고가 부족합니다");
-        }
-    }
-
-    private Product createProduct(int stockQuantity) {
-        return Product.create("테스트 상품", "설명", BigDecimal.valueOf(10000), stockQuantity);
-    }
-}
-```
-
----
-
-## **2. Domain Service 테스트**
-
-### 테스트 포인트
-
-- 비즈니스 규칙 검증 (calculateTotalPrice, reserveStock 등)
-- 도메인 규칙 위반 시 예외 발생
-- 여러 Entity를 사용하는 복잡한 로직
-
-### **특징**
-
-- 순수 Java 단위 테스트
-- 의존성이 있어도 실제 객체 사용 가능 (가벼운 경우)
-
-### **예시**
-
-```java
-@DisplayName("StockService 도메인 서비스")
-class StockServiceTest {
-
-    private StockService stockService;
-
-    @BeforeEach
-    void setUp() {
-        stockService = new StockService();
-    }
-
-    @Nested
-    @DisplayName("재고 예약")
-    class ReserveStock {
-
-        @Test
-        @DisplayName("충분한 재고가 있으면 예약할 수 있다")
-        void reserveStockSuccessfully() {
-            Product product = createProduct(100);
-
-            stockService.reserveStock(product, 30);
-
-            assertThat(product.getStockQuantity()).isEqualTo(70);
-        }
-
-        @Test
-        @DisplayName("재고가 부족하면 예외가 발생한다")
-        void reserveStockWithInsufficientStock() {
-            Product product = createProduct(10);
-
-            assertThatThrownBy(() -> stockService.reserveStock(product, 20))
-                    .isInstanceOf(ProductOutOfStockException.class);
-        }
-    }
-}
-```
-
----
-
-## **3. Application Service 테스트 (⚠️ 선택적으로 테스트)**
-
-### 테스트 포인트
-
-- Repository는 Mock 처리
-- 중요한 비즈니스 플로우만 테스트
-- 트랜잭션 동작 검증
-
-### **특징**
-
-- Mockito를 사용한 단위 테스트
-- Repository, Domain Service를 Mock 처리
-- 유즈케이스 흐름 검증
-
-### **예시**
-
-```java
-@DisplayName("ProductApplicationService")
-@ExtendWith(MockitoExtension.class)
-class ProductApplicationServiceTest {
-
-    @InjectMocks
-    private ProductApplicationService productApplicationService;
-
-    @Mock
-    private ProductRepository productRepository;
-
-    @Mock
-    private StockService stockService;
-
-    @Test
-    @DisplayName("상품을 생성할 수 있다")
-    void createProduct() {
-        // given
-        CreateProductRequest request = new CreateProductRequest(
-                "새 상품", "설명", BigDecimal.valueOf(10000), 100
-        );
-        Product savedProduct = Product.create(
-                request.name(), request.description(), request.price(), request.stockQuantity()
-        );
-        given(productRepository.save(any(Product.class))).willReturn(savedProduct);
-
-        // when
-        ProductResponse response = productApplicationService.createProduct(request);
-
-        // then
-        assertThat(response.name()).isEqualTo("새 상품");
-        then(productRepository).should().save(any(Product.class));
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 상품을 조회하면 예외가 발생한다")
-    void getProductNotFound() {
-        // given
-        Long productId = 999L;
-        given(productRepository.findById(productId)).willReturn(Optional.empty());
-
-        // when & then
-        assertThatThrownBy(() -> productApplicationService.getProduct(productId))
-                .isInstanceOf(ProductNotFoundException.class);
-    }
-}
-```
-
-### **BDDMockito 패턴**
-
-```java
-// Stubbing
-given(repository.findById(id)).willReturn(Optional.of(entity));
-
-// Verification
-then(repository).should().save(any(Entity.class));
-then(service).should(never()).doSomething();
-```
-
----
-
-## **4. Repository 테스트**
-
-### **테스트 포인트**
-
-- CRUD 동작 확인
-- 커스텀 쿼리 메서드 검증
-- 연관관계 매핑 확인
-
-### **특징**
-
-- `@DataJpaTest` 사용 → JPA 관련 빈만 로드
-- H2 인메모리 데이터베이스 사용
-- 트랜잭션 자동 롤백
-
-### **예시**
-
-```java
-@DisplayName("ProductRepository 통합 테스트")
-@DataJpaTest
-class ProductRepositoryTest {
-
-    @Autowired
-    private ProductRepository productRepository;
-
-    @Test
-    @DisplayName("상품을 저장하고 조회할 수 있다")
-    void saveAndFind() {
-        // given
-        Product product = Product.create("테스트 상품", "설명", BigDecimal.valueOf(10000), 100);
-
-        // when
-        Product savedProduct = productRepository.save(product);
-        Product foundProduct = productRepository.findById(savedProduct.getId()).orElse(null);
-
-        // then
-        assertThat(foundProduct).isNotNull();
-        assertThat(foundProduct.getName()).isEqualTo("테스트 상품");
-    }
-
-    @Test
-    @DisplayName("상태별로 상품을 조회할 수 있다")
-    void findByStatus() {
-        // given
-        Product availableProduct = Product.create("판매중 상품", "설명", BigDecimal.valueOf(10000), 100);
-        Product discontinuedProduct = Product.create("판매중지 상품", "설명", BigDecimal.valueOf(20000), 50);
-        discontinuedProduct.discontinue();
-
-        productRepository.save(availableProduct);
-        productRepository.save(discontinuedProduct);
-
-        // when
-        List<Product> availableProducts = productRepository.findByStatus(ProductStatus.AVAILABLE);
-
-        // then
-        assertThat(availableProducts).hasSize(1);
-        assertThat(availableProducts.get(0).getName()).isEqualTo("판매중 상품");
-    }
-}
-```
-
----
-
-## **5. Controller 테스트**
-
-### **테스트 포인트**
-
-- HTTP 상태 코드
-- 요청 유효성 검증 (`@Valid`)
-- 응답 JSON 구조
-- 예외 처리 (GlobalExceptionHandler)
-
-### **특징**
-
-- `@WebMvcTest` 사용 → Web Layer만 로드
-- MockMvc로 HTTP 요청/응답 테스트
-- Application Service를 Mock 처리
-
-### **예시**
-
-```java
-@DisplayName("ProductController 통합 테스트")
-@WebMvcTest(ProductController.class)
-class ProductControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockitoBean
-    private ProductApplicationService productApplicationService;
-
-    @Test
-    @DisplayName("상품을 생성할 수 있다")
-    void createProduct() throws Exception {
-        // given
-        CreateProductRequest request = new CreateProductRequest(
-                "새 상품", "상품 설명", BigDecimal.valueOf(10000), 100
-        );
-        ProductResponse response = createProductResponse(1L, "새 상품", BigDecimal.valueOf(10000), 100);
-        given(productApplicationService.createProduct(any())).willReturn(response);
-
-        // when & then
-        mockMvc.perform(post("/api/products")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andDo(print())
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.name").value("새 상품"));
-    }
-
-    @Test
-    @DisplayName("상품명이 없으면 400 에러가 발생한다")
-    void createProductWithoutName() throws Exception {
-        // given
-        CreateProductRequest request = new CreateProductRequest(
-                "", "설명", BigDecimal.valueOf(10000), 100
-        );
-
-        // when & then
-        mockMvc.perform(post("/api/products")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 상품을 조회하면 404 에러가 발생한다")
-    void getProductNotFound() throws Exception {
-        // given
-        Long productId = 999L;
-        given(productApplicationService.getProduct(productId))
-                .willThrow(new ProductNotFoundException(productId));
-
-        // when & then
-        mockMvc.perform(get("/api/products/{productId}", productId))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("P001"));
-    }
-}
-```
-
----
-
-## **테스트 작성 패턴**
-
-### **1. given-when-then (BDD 스타일)**
-
-```java
-@Test
-void testMethod() {
-    // given - 테스트 준비
-    Product product = createProduct(100);
-
-    // when - 테스트 실행
-    product.addStock(50);
-
-    // then - 결과 검증
-    assertThat(product.getStockQuantity()).isEqualTo(150);
-}
-```
-
-### **2. @Nested로 테스트 그룹화**
-
-```java
-@DisplayName("Product 엔티티")
-class ProductTest {
-
-    @Nested
-    @DisplayName("생성")
-    class Creation { ... }
-
-    @Nested
-    @DisplayName("재고 관리")
-    class StockManagement { ... }
-
-    @Nested
-    @DisplayName("상태 변경")
-    class StatusChange { ... }
-}
-```
-
-### **3. @DisplayName으로 한글 테스트명**
-
-```java
-@Test
-@DisplayName("재고보다 많은 수량을 차감하면 예외가 발생한다")
-void removeStockExceedingQuantityThrowsException() { ... }
-```
-
-### **4. 팩토리 메서드로 테스트 데이터 생성**
-
-```java
-private Product createProduct(int stockQuantity) {
-    return Product.create("테스트 상품", "설명", BigDecimal.valueOf(10000), stockQuantity);
-}
-
-private ProductResponse createProductResponse(Long id, String name, BigDecimal price, Integer stockQuantity) {
-    return new ProductResponse(id, name, "설명", price, stockQuantity, ProductStatus.AVAILABLE, true, LocalDateTime.now(), null);
-}
-```
-
----
-
-## **테스트 실행 명령어**
-
-```bash
-# 전체 테스트 실행
-./gradlew test
-
-# 특정 테스트 클래스 실행
-./gradlew test --tests "*.ProductTest"
-
-# 특정 테스트 메서드 실행
-./gradlew test --tests "*.ProductTest.createProduct"
-
-# Nested 클래스 테스트 실행
-./gradlew test --tests "*.ProductTest\$Creation"
-
-# 테스트 리포트 확인
-open build/reports/tests/test/index.html
-```
-
----
-
-## **테스트 의존성**
-
-```groovy
-dependencies {
-    // 테스트 기본
-    testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-
-    // H2 인메모리 DB (Repository 테스트용)
-    testRuntimeOnly 'com.h2database:h2'
-}
-```
-
-### **spring-boot-starter-test 포함 라이브러리**
-
-- JUnit 5
-- AssertJ
-- Mockito
-- JSONPath
-- Spring Test / Spring Boot Test
-
----
-
-## **테스트 설정 파일**
-
-### **src/test/resources/application.properties**
-
-```properties
-spring.application.name=spring-boot-monolithic-starter
-
-# H2 Database for Testing
-spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-spring.datasource.driverClassName=org.h2.Driver
-spring.datasource.username=sa
-spring.datasource.password=
-
-# JPA
-spring.jpa.hibernate.ddl-auto=create-drop
-spring.jpa.show-sql=false
-spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-```

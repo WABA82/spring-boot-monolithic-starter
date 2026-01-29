@@ -36,6 +36,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a DDD-based monolithic Spring Boot application following domain-centric package structure with layer responsibility separation.
 
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed guide.
+
 ### Package Structure
 
 ```
@@ -121,7 +123,7 @@ com.examples.springbootmonolithicstarter
 
 ## Testing Strategy
 
-See [README.md](README.md#testing-guide) for detailed testing guide.
+See [TESTING.md](docs/TESTING.md) for detailed testing guide.
 
 | Layer | Test Type | Annotation | Speed |
 |-------|-----------|------------|-------|
