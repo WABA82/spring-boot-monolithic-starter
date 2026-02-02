@@ -1,4 +1,4 @@
-# Git-Convention
+# Commits Guide
 
 > Conventional Commits을 기반으로한 커밋 컨벤션 문서입니다.
 > 

@@ -1,6 +1,6 @@
-# CONVENTION Guide
+# Architecture Guide
 
-> DDD 기반 스프링부트 애플리케이션을 위한 컨벤션 전략 가이드입니다.
+> DDD 기반 스프링부트 애플리케이션을 위한 아키텍처 컨벤션 전략 가이드입니다.
 
 ---
 
